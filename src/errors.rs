@@ -1,9 +1,14 @@
+use std::iter::once;
 use std::{
     error::Error,
     fmt::{self, Display, Debug, Formatter},
 };
+use itertools::Itertools;
 use unicode_names2::name;
-use crate::text::Span;
+use crate::{
+    text::Span,
+    util::if_and_then,
+};
 
 pub enum SyntaxError {
     UnexpectedCharacter(Vec<char>, Span),
@@ -16,15 +21,16 @@ impl Display for SyntaxError {
         use SyntaxError::*;
         f.write_str("Syntax error: ").and_then(|_| match self {
             UnexpectedCharacter(chars, span) => {
-                f.write_str(if chars.len() == 1 {
-                    if let Some(name) = name(chars[0]) {
-                        format!("Unexpected character '{}' at {}", name, span)
-                    } else {
-                        format!("Unexpected character at {}", span)
-                    }
-                } else {
-                    format!("Unexpected characters at {}", span)
-                }.as_str())
+                assert!([1, 1, 1].iter().all_equal());
+                assert!([1, 1].iter().all_equal());
+                assert!([1].iter().all_equal());
+
+                // all_equal() returns true when len = 1
+                let c_name: String = if_and_then(chars.iter().all_equal(), || name(chars[0]))
+                        .map(|c_name| once("'").chain(c_name).chain(once("' ")).collect())
+                        .unwrap_or_default();
+                f.write_str(format!("Unexpected {}character{} at {}",
+                    c_name, if chars.len() == 1 { "" } else { "s" }, span).as_str())
             },
 
             UnterminatedString(span) => {

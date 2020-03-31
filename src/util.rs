@@ -13,6 +13,15 @@ pub fn if_then<T, F: FnOnce() -> T>(b: bool, f: F) -> Option<T> {
     if b { Some(f()) } else { None }
 }
 
+/// Returns `f()` if the `bool` is `true`, or `None` otherwise.
+///
+/// This is useful because Rust still doesn't have a way to chain `if` and `if`-`let`,
+/// at least on stable.
+#[inline]
+pub fn if_and_then<T, F: FnOnce() -> Option<T>>(b: bool, f: F) -> Option<T> {
+    if b { f() } else { None }
+}
+
 /// Includes quotes and a trailing space.
 pub fn format_first_char_name(s: &str) -> String {
     format_char_name(s.chars().next().unwrap())
