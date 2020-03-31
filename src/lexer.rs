@@ -47,10 +47,10 @@ fn closing_quote(q: char) -> char {
 }
 
 #[derive(Debug)]
-pub struct Tokens(Vec<IToken>, Vec<SyntaxError>);
+pub struct Tokens(Vec<Token>, Vec<SyntaxError>);
 
 impl Tokens {
-    pub fn tokens(&self) -> &Vec<IToken> {
+    pub fn tokens(&self) -> &Vec<Token> {
         &self.0
     }
 
@@ -75,7 +75,7 @@ impl std::str::FromStr for Tokens {
     type Err = Infallible;
 
     fn from_str(code: &str) -> Result<Self, Self::Err> {
-        let mut tokens: Vec<IToken> = Vec::new();
+        let mut tokens: Vec<Token> = Vec::new();
         let mut errors: Vec<SyntaxError> = Vec::new();
 
         let mut iter = code.chars().enumerate_line_col().peekable();
@@ -90,27 +90,24 @@ impl std::str::FromStr for Tokens {
 
                 | '\n'
                 | ';' => {
-                    tokens.push(Box::new(TerminatorToken {
-                        span: Span::one(pos),
-                        lexeme: c.to_string(),
-                    }));
+                    tokens.push(Token::Terminator(pos));
                 },
 
                 _ if TOKEN_SYMBOLS.contains(&c) => {
-                    tokens.push(Box::new(OperatorToken::consume_from(&mut iter, c, pos)));
+                    tokens.push(Token::Ident(IdentToken::Op(OperatorToken::consume_from(&mut iter, c, pos))))
                 },
 
                 _ if valid_keyword_start(c) => {
-                    tokens.push(Box::new(KeywordToken::consume_from(&mut iter, c, pos)));
+                    tokens.push(Token::Ident(IdentToken::Kw(KeywordToken::consume_from(&mut iter, c, pos))));
                 },
 
                 _ if c.is_ascii_digit() => match IntegerLiteralToken::try_consume_from(&mut iter, c, pos) {
-                    Ok(token) => tokens.push(Box::new(token)),
+                    Ok(token) => tokens.push(Token::Lit(LiteralToken::Int(token))),
                     Err(e) => errors.push(e),
                 },
 
                 _ if OPENING_QUOTES.contains(&c) => match PlainStringToken::try_consume_from(&mut iter, c, pos) {
-                    Ok(token) => tokens.push(Box::new(token)),
+                    Ok(token) => tokens.push(Token::Lit(LiteralToken::Str(StringLiteralToken::Plain(token)))),
                     Err(e) => errors.push(e),
                 },
 
@@ -141,8 +138,8 @@ fn valid_token_start(c: char) -> bool {
     }
 }
 
-impl From<(Vec<IToken>, Vec<SyntaxError>)> for Tokens {
-    fn from(tup: (Vec<IToken>, Vec<SyntaxError>)) -> Self {
+impl From<(Vec<Token>, Vec<SyntaxError>)> for Tokens {
+    fn from(tup: (Vec<Token>, Vec<SyntaxError>)) -> Self {
         Self(tup.0, tup.1)
     }
 }
@@ -163,59 +160,29 @@ Token
     - RawStringToken/VerbatimStringToken (TODO; maybe can be combined with PlainStringToken)
 */
 
-pub type IToken = Box<dyn Token>;
-
-pub trait Token: Debug {
-    fn lexeme(&self) -> &str;
-    fn span(&self) -> Span;
+#[derive(Debug)]
+pub enum Token {
+    Terminator(Pos),
+    Ident(IdentToken),
+    Lit(LiteralToken),
 }
 
-macro_rules! token_type {
-    (
-        $( #[$struct_meta:meta] )*
-        $struct:ident {
-            $(
-                $( #[$field_meta:meta] )*
-                $field:ident: $type:ty,
-            )*
-        }
-    ) => {
-        #[derive(Debug)]
-        $( #[$struct_meta] )*
-        pub struct $struct {
-            lexeme: String,
-            span: Span,
-            $(
-                $( #[$field_meta] )*
-                $field: $type,
-            )*
-        }
-
-        impl Token for $struct {
-            fn lexeme(&self) -> &str { self.lexeme.as_str() }
-            fn span(&self) -> Span { self.span }
-        }
-    };
+#[derive(Debug)]
+pub enum IdentToken {
+    Op(OperatorToken),
+    Kw(KeywordToken),
 }
 
-token_type!(TerminatorToken {});
-
-pub trait IdentToken: Token {
-    fn name(&self) -> &str {
-        self.lexeme()
-    }
-}
-
-token_type!(OperatorToken {
+#[derive(Debug)]
+pub struct OperatorToken {
     kind: OperatorKind,
-});
-impl IdentToken for OperatorToken {}
+    span: Span,
+}
 impl OperatorToken {
     fn consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Self {
         let (lexeme, span) = string_while(iter, start_c, start_pos, |(c, _)| TOKEN_SYMBOLS.contains(c));
         Self {
             kind: OperatorKind::from(lexeme.as_str()),
-            lexeme,
             span,
         }
     }
@@ -233,7 +200,7 @@ pub enum OperatorKind {
     BraceClose,
     EmptyBraces,
     Comma,
-    Other,
+    Other(String),
 }
 impl From<&str> for OperatorKind {
     fn from(s: &str) -> Self {
@@ -249,22 +216,22 @@ impl From<&str> for OperatorKind {
             "}" => BraceClose,
             "{}" => EmptyBraces,
             "," => Comma,
-            _ => Other
+            _ => Other(s.to_string())
         }
     }
 }
 
-token_type!(KeywordToken {
+#[derive(Debug)]
+pub struct KeywordToken {
     kind: KeywordKind,
-});
-impl IdentToken for KeywordToken {}
+    span: Span,
+}
 impl KeywordToken {
     fn consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Self {
         let (lexeme, span) = string_while(iter, start_c, start_pos, |(c, _)| valid_keyword_char(*c));
         assert!(valid_token_keyword(lexeme.as_str()));
         Self {
             kind: KeywordKind::from(lexeme.as_str()),
-            lexeme,
             span,
         }
     }
@@ -281,7 +248,7 @@ pub enum KeywordKind {
     Else,
     And,
     Or,
-    Other,
+    Other(String),
 }
 impl From<&str> for KeywordKind {
     fn from(s: &str) -> Self {
@@ -294,20 +261,21 @@ impl From<&str> for KeywordKind {
             "else" => Else,
             "and" => And,
             "or" => Or,
-            _ => Other
+            _ => Other(s.to_string())
         }
     }
 }
 
-pub trait LiteralToken<'a, T>: Token {
-    fn literal(&'a self) -> T;
+#[derive(Debug)]
+pub enum LiteralToken {
+    Int(IntegerLiteralToken),
+    Str(StringLiteralToken),
 }
 
-token_type!(IntegerLiteralToken {
+#[derive(Debug)]
+pub struct IntegerLiteralToken {
     literal: usize,
-});
-impl<'a> LiteralToken<'a, usize> for IntegerLiteralToken {
-    fn literal(&self) -> usize { self.literal }
+    span: Span,
 }
 impl IntegerLiteralToken {
     fn try_consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Result<Self, SyntaxError> {
@@ -325,24 +293,23 @@ impl IntegerLiteralToken {
 
         Ok(Self {
             literal: lexeme.parse().expect("this string should be only digits"),
-            lexeme,
             span,
         })
     }
 }
 
-pub trait StringLiteralToken<'a, T>: LiteralToken<'a, T> {}
+#[derive(Debug)]
+pub enum StringLiteralToken {
+    Plain(PlainStringToken),
+    Template(TemplateStringToken),
+}
 
-token_type!(PlainStringToken {
+#[derive(Debug)]
+pub struct PlainStringToken {
     /// Has all the escape sequences replaced.
     literal: String,
-});
-impl<'a> LiteralToken<'a, &'a String> for PlainStringToken {
-    fn literal(&'a self) -> &'a String {
-        &self.lexeme
-    }
+    span: Span,
 }
-impl<'a> StringLiteralToken<'a, &'a String> for PlainStringToken {}
 impl PlainStringToken {
     fn try_consume_from(iter: MyIterType!(), start_quote: char, start_pos: Pos) -> Result<Self, SyntaxError> {
         let close_quote = closing_quote(start_quote);
@@ -372,40 +339,6 @@ impl PlainStringToken {
                     },
                 }
             }
-            // match c {
-            //     _ if *c == close_quote => {
-            //         // The string is over, unless the prev char was a backslash
-            //         if escaping {
-            //             escaping = false;
-            //             Ok(true)
-            //         } else {
-            //             Ok(false)
-            //         }
-            //     },
-            //     '\n' => {
-            //         if escaping {
-            //             escaping = false;
-            //             Ok(true)
-            //         } else {
-            //             // Strings can't continue across lines unless escaped
-            //             Err(SyntaxError::UnterminatedString(Span::one(*pos)))
-            //         }
-            //     },
-            //     _ if escaping => {
-            //         if ALLOWED_ESCAPE_CHARS.contains(c) {
-            //             escaping = false;
-            //             Ok(true)
-            //         } else {
-            //             Err(SyntaxError::StringInvalidEscSeq(Span::one(*pos)))
-            //         }
-            //     },
-            //     _ => {
-            //         if *c == '\\' {
-            //             escaping = true;
-            //         }
-            //         Ok(true)
-            //     },
-            // }
         })?;
         
         // We need to consume the closing quote because try_string_while() peeks at chars
@@ -445,7 +378,6 @@ impl PlainStringToken {
 
         Ok(Self {
             literal,
-            lexeme,
             span,
         })
     }
@@ -453,15 +385,11 @@ impl PlainStringToken {
 
 pub type StringTemplate = Vec<Either<PlainStringToken, KeywordToken>>;
 // TODO: implement this string type.
-token_type!(TemplateStringToken {
+#[derive(Debug)]
+pub struct TemplateStringToken {
     template: StringTemplate,
-});
-impl<'a> LiteralToken<'a, &'a StringTemplate> for TemplateStringToken {
-    fn literal(&'a self) -> &'a StringTemplate {
-        &self.template
-    }
+    span: Span,
 }
-impl<'a> StringLiteralToken<'a, &'a StringTemplate> for TemplateStringToken {}
 
 // Iterator consumption helper methods
 
