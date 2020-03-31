@@ -156,9 +156,11 @@ Token
   - KeywordToken
 - LiteralToken
   - IntegerLiteralToken
+  - DecimalLiteralToken (TODO; also I might combine this with IntegerLiteralToken)
   - StringLiteralToken
     - PlainStringToken
     - TemplateStringToken (TODO)
+    - RawStringToken/VerbatimStringToken (TODO; maybe can be combined with PlainStringToken)
 */
 
 type IToken = Box<dyn Token>;
