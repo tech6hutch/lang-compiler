@@ -163,7 +163,7 @@ Token
     - RawStringToken/VerbatimStringToken (TODO; maybe can be combined with PlainStringToken)
 */
 
-type IToken = Box<dyn Token>;
+pub type IToken = Box<dyn Token>;
 
 pub trait Token: Debug {
     fn lexeme(&self) -> &str;
@@ -254,15 +254,47 @@ impl From<&str> for OperatorKind {
     }
 }
 
-token_type!(KeywordToken {});
+token_type!(KeywordToken {
+    kind: KeywordKind,
+});
 impl IdentToken for KeywordToken {}
 impl KeywordToken {
     fn consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Self {
         let (lexeme, span) = string_while(iter, start_c, start_pos, |(c, _)| valid_keyword_char(*c));
         assert!(valid_token_keyword(lexeme.as_str()));
         Self {
+            kind: KeywordKind::from(lexeme.as_str()),
             lexeme,
             span,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum KeywordKind {
+    // Let,
+    // Var,
+    End,
+    Do,
+    If,
+    Then,
+    Else,
+    And,
+    Or,
+    Other,
+}
+impl From<&str> for KeywordKind {
+    fn from(s: &str) -> Self {
+        use KeywordKind::*;
+        match s {
+            "end" => End,
+            "do" => Do,
+            "if" => If,
+            "then" => Then,
+            "else" => Else,
+            "and" => And,
+            "or" => Or,
+            _ => Other
         }
     }
 }
