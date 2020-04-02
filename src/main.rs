@@ -4,28 +4,49 @@ use itertools::Itertools;
 mod errors;
 mod text;
 mod lexer;
-// mod parser;
+mod parser;
 mod traverser;
 mod util;
 
 fn main() {
-    let args = std::env::args().collect_vec();
-    match args.as_slice() {
-        [_, _, _, ..] => {
-            println!("Usage: lang-compiler [file]");
-            std::process::exit(64);
+    use lexer::{OperatorToken, OperatorKind};
+    use parser::{Expression, BinaryExpr, UnaryExpr, LiteralExpr, IntegerLiteral};
+    let span = text::Span::one(text::Pos { line: 0, col: 0 });
+    let expr: parser::Expression = Expression::Binary(BinaryExpr {
+        left: Box::new(Expression::Unary(UnaryExpr {
+            operator: OperatorToken {
+                kind: OperatorKind::Other("-".to_string()),
+                span,
+            },
+            right: Box::new(Expression::Lit(LiteralExpr::Int(IntegerLiteral { value: 123 }))),
+        })),
+        operator: OperatorToken {
+            kind: OperatorKind::Other("*".to_string()),
+            span,
         },
-        [_, file] => {
-            run_file(file).expect("file not found?");
-        },
-        [_] => {
-            run_prompt().expect("reading from stdin failed?");
-        },
-        [] => {
-            panic!("This program is not designed for whatever this environment is.");
-        },
-    }
+        right: Box::new(Expression::Grouping(Box::new(Expression::Lit(LiteralExpr::Int(IntegerLiteral { value: 46 }))))),
+    });
+    println!("{}", parser::print_ast(&expr));
 }
+
+// fn main() {
+//     let args = std::env::args().collect_vec();
+//     match args.as_slice() {
+//         [_, _, _, ..] => {
+//             println!("Usage: lang-compiler [file]");
+//             std::process::exit(64);
+//         },
+//         [_, file] => {
+//             run_file(file).expect("file not found?");
+//         },
+//         [_] => {
+//             run_prompt().expect("reading from stdin failed?");
+//         },
+//         [] => {
+//             panic!("This program is not designed for whatever this environment is.");
+//         },
+//     }
+// }
 
 fn run_file(path: &str) -> io::Result<()> {
     let file = fs::read_to_string(path)?;

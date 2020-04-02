@@ -1,6 +1,6 @@
 use std::{
     convert::Infallible,
-    fmt::Debug,
+    fmt::{self, Debug, Display, Formatter, Write},
     iter::{Extend, Peekable, once},
 };
 use either::Either;
@@ -18,6 +18,7 @@ pub fn lex(code: &str) -> Tokens {
 
 const TOKEN_SYMBOLS: &[char] = &[
     /* conditions */ '=', '<', '>', '?',
+    /* arithmetic */ '+', '-', '*', '/',
     /* lists, infix, and expr sep */ ',', '.', ';',
     /* collections (and grouping) */ '(', ')', '[', ']', '{', '}',
 ];
@@ -160,23 +161,23 @@ Token
     - RawStringToken/VerbatimStringToken (TODO; maybe can be combined with PlainStringToken)
 */
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Terminator(Pos),
     Ident(IdentToken),
     Lit(LiteralToken),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum IdentToken {
     Op(OperatorToken),
     Kw(KeywordToken),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct OperatorToken {
-    kind: OperatorKind,
-    span: Span,
+    pub kind: OperatorKind,
+    pub span: Span,
 }
 impl OperatorToken {
     fn consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Self {
@@ -188,7 +189,8 @@ impl OperatorToken {
     }
 }
 
-#[derive(Debug)]
+/// I only list explicit types for operators that require special handling.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OperatorKind {
     ParenOpen,
     ParenClose,
@@ -220,11 +222,29 @@ impl From<&str> for OperatorKind {
         }
     }
 }
+impl Display for OperatorKind {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        use OperatorKind::*;
+        f.write_str(match self {
+            ParenOpen => "(",
+            ParenClose => ")",
+            EmptyParens => "()",
+            BracketOpen => "[",
+            BracketClose => "]",
+            EmptyBrackets => "[]",
+            BraceOpen => "{",
+            BraceClose => "}",
+            EmptyBraces => "{}",
+            Comma => ",",
+            Other(s) => s.as_str()
+        })
+    }
+}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeywordToken {
-    kind: KeywordKind,
-    span: Span,
+    pub kind: KeywordKind,
+    pub span: Span,
 }
 impl KeywordToken {
     fn consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Self {
@@ -237,7 +257,7 @@ impl KeywordToken {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum KeywordKind {
     // Let,
     // Var,
@@ -266,16 +286,16 @@ impl From<&str> for KeywordKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralToken {
     Int(IntegerLiteralToken),
     Str(StringLiteralToken),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerLiteralToken {
-    literal: usize,
-    span: Span,
+    pub literal: usize,
+    pub span: Span,
 }
 impl IntegerLiteralToken {
     fn try_consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Result<Self, SyntaxError> {
@@ -298,17 +318,17 @@ impl IntegerLiteralToken {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum StringLiteralToken {
     Plain(PlainStringToken),
     Template(TemplateStringToken),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PlainStringToken {
     /// Has all the escape sequences replaced.
-    literal: String,
-    span: Span,
+    pub literal: String,
+    pub span: Span,
 }
 impl PlainStringToken {
     fn try_consume_from(iter: MyIterType!(), start_quote: char, start_pos: Pos) -> Result<Self, SyntaxError> {
@@ -385,10 +405,10 @@ impl PlainStringToken {
 
 pub type StringTemplate = Vec<Either<PlainStringToken, KeywordToken>>;
 // TODO: implement this string type.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TemplateStringToken {
-    template: StringTemplate,
-    span: Span,
+    pub template: StringTemplate,
+    pub span: Span,
 }
 
 // Iterator consumption helper methods
