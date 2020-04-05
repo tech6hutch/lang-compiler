@@ -10,21 +10,21 @@ mod util;
 
 fn main() {
     use lexer::{OperatorToken, OperatorKind};
-    use parser::{Expression, BinaryExpr, UnaryExpr, LiteralExpr, IntegerLiteral};
+    use parser::{Expression as Expr, BinaryExpr, UnaryExpr, IntegerLiteral};
     let span = text::Span::one(text::Pos { line: 0, col: 0 });
-    let expr: parser::Expression = Expression::Binary(BinaryExpr {
-        left: Box::new(Expression::Unary(UnaryExpr {
+    let expr: Expr = Expr::Binary(BinaryExpr {
+        left: Box::new(Expr::Unary(UnaryExpr {
             operator: OperatorToken {
                 kind: OperatorKind::Other("-".to_string()),
                 span,
             },
-            right: Box::new(Expression::Lit(LiteralExpr::Int(IntegerLiteral { value: 123 }))),
+            right: Box::new(Expr::Int(IntegerLiteral { value: 123 })),
         })),
         operator: OperatorToken {
             kind: OperatorKind::Other("*".to_string()),
             span,
         },
-        right: Box::new(Expression::Grouping(Box::new(Expression::Lit(LiteralExpr::Int(IntegerLiteral { value: 46 }))))),
+        right: Box::new(Expr::Grouping(Box::new(Expr::Int(IntegerLiteral { value: 46 })))),
     });
     println!("{}", parser::print_ast(&expr));
 }

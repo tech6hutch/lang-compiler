@@ -1,9 +1,9 @@
-use std::iter::once;
 use std::{
     collections::HashMap,
     convert::TryFrom,
     error::Error,
     fmt::{self, Display, Debug, Formatter},
+    iter::once,
 };
 use either::Either;
 use itertools::Itertools;
@@ -17,22 +17,19 @@ use crate::{
 pub fn print_ast(expr: &Expression) -> String {
     return match expr {
         Expression::Grouping(expr) => parenthesize("group", &[expr]),
-        Expression::Binary(expr) => parenthesize(expr.operator.kind.to_string(), &[expr.left.as_ref(), expr.right.as_ref()]),
-        Expression::Unary(expr) => parenthesize(expr.operator.kind.to_string(), &[expr.right.as_ref()]),
-        Expression::Lit(literal) => match literal {
-            LiteralExpr::Int(IntegerLiteral { value }) => value.to_string(),
-            LiteralExpr::Str(literal) => match literal {
-                StringLiteral::Plain(PlainStringLiteral { value }) => value.clone(),
-            },
-        },
+        Expression::Binary(expr) => parenthesize(&expr.operator.kind, &[expr.left.as_ref(), expr.right.as_ref()]),
+        Expression::Unary(expr) => parenthesize(&expr.operator.kind, &[expr.right.as_ref()]),
+        Expression::Int(IntegerLiteral { value }) => value.to_string(),
+        Expression::Str(StringLiteral { value }) => value.clone(),
     };
 
-    fn parenthesize<T: AsRef<str>>(name: T, exprs: &[&Expression]) -> String {
-        let mut s = '('.to_string();
-        s.push_str(name.as_ref());
+    fn parenthesize<'a, T: Into<&'a str>>(name: T, exprs: &[&Expression]) -> String {
+        let mut s = ["(", name.into()].concat();
         for expr in exprs {
+            let expr_s = print_ast(expr);
+            s.reserve(expr_s.len() + 1);
             s.push(' ');
-            s.push_str(print_ast(expr).as_str());
+            s += &expr_s;
         }
         s.push(')');
         s
@@ -42,25 +39,32 @@ pub fn print_ast(expr: &Expression) -> String {
 /*
 TODO: Hierarchy:
 Expression
-- IdentExpr
-  - OperatorExpr
-  - KeywordExpr
-- LiteralExpr
-  - IntegerLiteral
-  - StringLiteral
-    - PlainStringLiteral
-    - TemplateLiteral
-  - CollectionLiteral
-    - ListLiteral
-    - TupleLiteral
-    - RecordLiteral
+// IdentExpr
+- OperatorExpr
+- KeywordExpr
+// LiteralExpr
+- IntegerLiteral
+// StringLiterals
+- PlainStringLiteral
+- TemplateLiteral
+// CollectionLiterals
+- ListLiteral
+- TupleLiteral
+- RecordLiteral
 - InvocationExpr
 */
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expression {
-    // Ident(IdentExpr),
-    Lit(LiteralExpr),
+    // Identifiers (TODO: reorganize)
+    // Ident(IdentExpr)
+
+    // Literals
+    Int(IntegerLiteral),
+    Str(StringLiteral),
+    // Temp(TemplateStringLiteral), TODO
+
+    // Invocations and nesting
     // Invoke(InvocationExpr),
     Grouping(Box<Expression>),
     Unary(UnaryExpr),
@@ -91,26 +95,28 @@ pub struct BinaryExpr {
 // #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 // pub struct KeywordExpr { name: String }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum LiteralExpr {
-    Int(IntegerLiteral),
-    Str(StringLiteral),
-    // Coll(CollectionLiteral),
-}
+// #[derive(Debug, PartialEq, Eq, Clone)]
+// pub enum LiteralExpr {
+//     Int(IntegerLiteral),
+//     Str(StringLiteral),
+//     // Coll(CollectionLiteral),
+// }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerLiteral { pub value: usize }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum StringLiteral {
-    Plain(PlainStringLiteral),
-    // Template(TemplateLiteral),
-}
+// #[derive(Debug, PartialEq, Eq, Clone)]
+// pub enum StringLiteral {
+//     Plain(PlainStringLiteral),
+//     // Template(TemplateLiteral),
+// }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct PlainStringLiteral { pub value: String }
+// pub struct PlainStringLiteral { pub value: String }
+pub struct StringLiteral { pub value: String }
+
 // #[derive(Debug, PartialEq, Eq, Clone)]
-// pub struct TemplateLiteral { value: Vec<Either<String, KeywordExpr>> }
+// pub struct TemplateStringLiteral { value: Vec<Either<String, KeywordExpr>> }
 
 // #[derive(Debug, PartialEq, Eq, Clone)]
 // pub enum CollectionLiteral {
