@@ -222,10 +222,10 @@ impl From<&str> for OperatorKind {
         }
     }
 }
-impl Display for OperatorKind {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+impl<'other> From<&'other OperatorKind> for &'other str {
+    fn from(op: &'other OperatorKind) -> Self {
         use OperatorKind::*;
-        f.write_str(match self {
+        match op {
             ParenOpen => "(",
             ParenClose => ")",
             EmptyParens => "()",
@@ -237,7 +237,12 @@ impl Display for OperatorKind {
             EmptyBraces => "{}",
             Comma => ",",
             Other(s) => s.as_str()
-        })
+        }
+    }
+}
+impl Display for OperatorKind {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.write_str(self.into())
     }
 }
 
