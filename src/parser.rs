@@ -40,7 +40,7 @@ pub fn print_ast(expr: &Expression) -> String {
 }
 
 /*
-TODO: Hierarchy:
+Hierarchy:
 Expression
 // IdentExpr
 - OperatorExpr

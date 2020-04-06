@@ -97,32 +97,46 @@ impl std::str::FromStr for Tokens {
                 },
 
                 _ if TOKEN_SYMBOLS.contains(&c) => {
+                    // This won't be necessary once Rust supports conditions and conditional assignment in
+                    // the same "if", since then I can use one "if" (and one "else") instead of a ton of them.
+                    let mut r#else = true;
+
                     if c == '.' {
-                        // Yes, for numbers we basically parse the decimal part with lookbehind.
-                        // Maybe it's dumb, but peeking 2 ahead would be hard with iterators.
+                        // Yes, for numbers we basically parse decimals using lookbehind. E.g., in
+                        // "123.45", it parses an int "123", stops at the ".", then from the "." looks
+                        // at the previous int and replaces it with a decimal parsed from "123.45".
+                        // Maybe it's dumb, but peeking 2 ahead (to see that there are more digits
+                        // after the ".") would be hard with iterators.
                         if let Some(last) = tokens.last_mut() {
-                            if let Token::Lit(LiteralToken::Int(int_literal)) = last {
-                                match DecimalLiteralToken::try_consume_from(&mut iter, int_literal) {
-                                    Ok(token) => *last = Token::Lit(LiteralToken::Dec(token)),
-                                    Err(e) => errors.push(e),
+                            if let Token::Int(int_token) = last {
+                                if match_next(&mut iter, char::is_ascii_digit) {
+                                    r#else = false;
+                                    
+                                    match DecimalLiteralToken::try_consume_from(&mut iter, int_token) {
+                                        Ok(token) => *last = Token::Dec(token),
+                                        Err(e) => errors.push(e),
+                                    }
                                 }
                             }
                         }
                     }
-                    tokens.push(Token::Ident(IdentToken::Op(OperatorToken::consume_from(&mut iter, c, pos))))
+
+                    if r#else {
+                        tokens.push(Token::OpIdent(OperatorToken::consume_from(&mut iter, c, pos)));
+                    }
                 },
 
                 _ if valid_keyword_start(c) => {
-                    tokens.push(Token::Ident(IdentToken::Kw(KeywordToken::consume_from(&mut iter, c, pos))));
+                    tokens.push(Token::KwIdent(KeywordToken::consume_from(&mut iter, c, pos)));
                 },
 
                 _ if c.is_ascii_digit() => match IntegerLiteralToken::try_consume_from(&mut iter, c, pos) {
-                    Ok(token) => tokens.push(Token::Lit(LiteralToken::Int(token))),
+                    Ok(token) => tokens.push(Token::Int(token)),
                     Err(e) => errors.push(e),
                 },
 
-                _ if OPENING_QUOTES.contains(&c) => match PlainStringToken::try_consume_from(&mut iter, c, pos) {
-                    Ok(token) => tokens.push(Token::Lit(LiteralToken::Str(StringLiteralToken::Plain(token)))),
+                _ if OPENING_QUOTES.contains(&c) => match StringLiteralToken::try_consume_from(&mut iter, c, pos) {
+                    Ok(token) => tokens.push(Token::Str(token)),
                     Err(e) => errors.push(e),
                 },
 
@@ -135,6 +149,10 @@ impl std::str::FromStr for Tokens {
 
         Ok(Tokens(tokens, errors))
     }
+}
+
+fn match_next<F: FnOnce(&char) -> bool>(iter: MyIterType!(), pred: F) -> bool {
+    iter.peek().map(|(next_c, _)| pred(next_c)).unwrap_or(false)
 }
 
 fn valid_token_start(c: char) -> bool {
@@ -163,29 +181,29 @@ impl From<(Vec<Token>, Vec<SyntaxError>)> for Tokens {
 Hierarchy:
 Token
 - TerminatorToken
-- IdentToken
-  - OperatorToken
-  - KeywordToken
-- LiteralToken
-  - IntegerLiteralToken
-  - DecimalLiteralToken (TODO; also I might combine this with IntegerLiteralToken)
-  - StringLiteralToken
-    - PlainStringToken
-    - TemplateStringToken (TODO)
-    - RawStringToken/VerbatimStringToken (TODO; maybe can be combined with PlainStringToken)
+// Identifier Tokens
+- OperatorToken
+- KeywordToken
+// Literal Tokens
+- IntegerLiteralToken
+- DecimalLiteralToken (I might combine this with IntegerLiteralToken in the future)
+// String Literal Tokens
+- StringLiteralToken
+- TemplateStringToken (TODO)
+- RawStringToken/VerbatimStringToken (TODO; maybe can be combined with plain StringLiteralToken)
 */
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Terminator(Pos),
-    Ident(IdentToken),
-    Lit(LiteralToken),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum IdentToken {
-    Op(OperatorToken),
-    Kw(KeywordToken),
+    // Ident
+    OpIdent(OperatorToken),
+    KwIdent(KeywordToken),
+    // Literals
+    Int(IntegerLiteralToken),
+    Dec(DecimalLiteralToken),
+    Str(StringLiteralToken),
+    TempStr(TemplateStringToken),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -306,13 +324,6 @@ impl From<&str> for KeywordKind {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum LiteralToken {
-    Int(IntegerLiteralToken),
-    Dec(DecimalLiteralToken),
-    Str(StringLiteralToken),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerLiteralToken {
     pub literal: BigInt,
     pub span: Span,
@@ -334,11 +345,11 @@ pub struct DecimalLiteralToken {
     pub span: Span,
 }
 impl DecimalLiteralToken {
-    fn try_consume_from(iter: MyIterType!(), intLiteral: &IntegerLiteralToken) -> Result<Self, SyntaxError> {
-        let start_pos = intLiteral.span.start;
+    fn try_consume_from(iter: MyIterType!(), int_token: &IntegerLiteralToken) -> Result<Self, SyntaxError> {
+        let start_pos = int_token.span.start;
         let (dec_str, span) = try_string_while(iter, None, start_pos, digit_not_keyword)?;
 
-        let big_str: String = format!("{}.{}", intLiteral.literal, dec_str);
+        let big_str: String = format!("{}.{}", int_token.literal, dec_str);
 
         Ok(Self {
             literal: big_str.parse().expect("this string should be valid decimal"),
@@ -360,18 +371,12 @@ fn digit_not_keyword((c, pos): &CharAndPos) -> Result<bool, SyntaxError> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum StringLiteralToken {
-    Plain(PlainStringToken),
-    Template(TemplateStringToken),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct PlainStringToken {
+pub struct StringLiteralToken {
     /// Has all the escape sequences replaced.
     pub literal: String,
     pub span: Span,
 }
-impl PlainStringToken {
+impl StringLiteralToken {
     fn try_consume_from(iter: MyIterType!(), start_quote: char, start_pos: Pos) -> Result<Self, SyntaxError> {
         let close_quote = closing_quote(start_quote);
         assert!(CLOSING_QUOTES.contains(&close_quote));
@@ -444,7 +449,7 @@ impl PlainStringToken {
     }
 }
 
-pub type StringTemplate = Vec<Either<PlainStringToken, KeywordToken>>;
+pub type StringTemplate = Vec<Either<StringLiteralToken, KeywordToken>>;
 // TODO: implement this string type.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TemplateStringToken {
