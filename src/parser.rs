@@ -5,8 +5,10 @@ use std::{
     fmt::{self, Display, Debug, Formatter},
     iter::once,
 };
+use bigdecimal::BigDecimal;
 use either::Either;
 use itertools::Itertools;
+use num_bigint::BigInt;
 use crate::{
     lexer::{self, Token, Tokens},
     text::{EnumerateLineCol, Pos, Span},
@@ -20,6 +22,7 @@ pub fn print_ast(expr: &Expression) -> String {
         Expression::Binary(expr) => parenthesize(&expr.operator.kind, &[expr.left.as_ref(), expr.right.as_ref()]),
         Expression::Unary(expr) => parenthesize(&expr.operator.kind, &[expr.right.as_ref()]),
         Expression::Int(IntegerLiteral { value }) => value.to_string(),
+        Expression::Dec(DecimalLiteral { value }) => value.to_string(),
         Expression::Str(StringLiteral { value }) => value.clone(),
     };
 
@@ -61,6 +64,7 @@ pub enum Expression {
 
     // Literals
     Int(IntegerLiteral),
+    Dec(DecimalLiteral),
     Str(StringLiteral),
     // Temp(TemplateStringLiteral), TODO
 
@@ -103,7 +107,10 @@ pub struct BinaryExpr {
 // }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct IntegerLiteral { pub value: usize }
+pub struct IntegerLiteral { pub value: BigInt }
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DecimalLiteral { pub value: BigDecimal }
 
 // #[derive(Debug, PartialEq, Eq, Clone)]
 // pub enum StringLiteral {

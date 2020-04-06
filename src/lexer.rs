@@ -3,8 +3,10 @@ use std::{
     fmt::{self, Debug, Display, Formatter, Write},
     iter::{Extend, Peekable, once},
 };
+use bigdecimal::BigDecimal;
 use either::Either;
 use itertools::Itertools;
+use num_bigint::BigInt;
 use crate::{
     errors::SyntaxError,
     text::{CharAndPos, EnumerateLineCol, Pos, Span},
@@ -95,6 +97,18 @@ impl std::str::FromStr for Tokens {
                 },
 
                 _ if TOKEN_SYMBOLS.contains(&c) => {
+                    if c == '.' {
+                        // Yes, for numbers we basically parse the decimal part with lookbehind.
+                        // Maybe it's dumb, but peeking 2 ahead would be hard with iterators.
+                        if let Some(last) = tokens.last_mut() {
+                            if let Token::Lit(LiteralToken::Int(int_literal)) = last {
+                                match DecimalLiteralToken::try_consume_from(&mut iter, int_literal) {
+                                    Ok(token) => *last = Token::Lit(LiteralToken::Dec(token)),
+                                    Err(e) => errors.push(e),
+                                }
+                            }
+                        }
+                    }
                     tokens.push(Token::Ident(IdentToken::Op(OperatorToken::consume_from(&mut iter, c, pos))))
                 },
 
@@ -294,32 +308,54 @@ impl From<&str> for KeywordKind {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralToken {
     Int(IntegerLiteralToken),
+    Dec(DecimalLiteralToken),
     Str(StringLiteralToken),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerLiteralToken {
-    pub literal: usize,
+    pub literal: BigInt,
     pub span: Span,
 }
 impl IntegerLiteralToken {
     fn try_consume_from(iter: MyIterType!(), start_c: char, start_pos: Pos) -> Result<Self, SyntaxError> {
-        let (lexeme, span) = try_string_while(iter, Some(start_c), start_pos, |(c, pos)| {
-            if c.is_ascii_digit() {
-                Ok(true)
-            } else if valid_keyword_start(*c) {
-                // Operators and whitespace are allowed after a number, but not keywords
-                Err(SyntaxError::UnexpectedCharacter(vec![*c], Span::one(*pos)))
-            } else {
-                // The int is over, stop collecting chars
-                Ok(false)
-            }
-        })?;
+        let (lexeme, span) = try_string_while(iter, Some(start_c), start_pos, digit_not_keyword)?;
 
         Ok(Self {
             literal: lexeme.parse().expect("this string should be only digits"),
             span,
         })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DecimalLiteralToken {
+    pub literal: BigDecimal,
+    pub span: Span,
+}
+impl DecimalLiteralToken {
+    fn try_consume_from(iter: MyIterType!(), intLiteral: &IntegerLiteralToken) -> Result<Self, SyntaxError> {
+        let start_pos = intLiteral.span.start;
+        let (dec_str, span) = try_string_while(iter, None, start_pos, digit_not_keyword)?;
+
+        let big_str: String = format!("{}.{}", intLiteral.literal, dec_str);
+
+        Ok(Self {
+            literal: big_str.parse().expect("this string should be valid decimal"),
+            span,
+        })
+    }
+}
+
+fn digit_not_keyword((c, pos): &CharAndPos) -> Result<bool, SyntaxError> {
+    if c.is_ascii_digit() {
+        Ok(true)
+    } else if valid_keyword_start(*c) {
+        // Operators and whitespace are allowed after a number, but not keywords
+        Err(SyntaxError::UnexpectedCharacter(vec![*c], Span::one(*pos)))
+    } else {
+        // The int is over, stop collecting chars
+        Ok(false)
     }
 }
 

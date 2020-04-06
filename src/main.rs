@@ -1,5 +1,7 @@
 use std::{fs, io::{self, Write}};
+use bigdecimal::BigDecimal;
 use itertools::Itertools;
+use num_bigint::BigInt;
 
 mod errors;
 mod text;
@@ -10,7 +12,7 @@ mod util;
 
 fn main() {
     use lexer::{OperatorToken, OperatorKind};
-    use parser::{Expression as Expr, BinaryExpr, UnaryExpr, IntegerLiteral};
+    use parser::{Expression as Expr, BinaryExpr, UnaryExpr, IntegerLiteral, DecimalLiteral};
     let span = text::Span::one(text::Pos { line: 0, col: 0 });
     let expr: Expr = Expr::Binary(BinaryExpr {
         left: Box::new(Expr::Unary(UnaryExpr {
@@ -18,15 +20,17 @@ fn main() {
                 kind: OperatorKind::Other("-".to_string()),
                 span,
             },
-            right: Box::new(Expr::Int(IntegerLiteral { value: 123 })),
+            right: Box::new(Expr::Int(IntegerLiteral { value: BigInt::from(123) })),
         })),
         operator: OperatorToken {
             kind: OperatorKind::Other("*".to_string()),
             span,
         },
-        right: Box::new(Expr::Grouping(Box::new(Expr::Int(IntegerLiteral { value: 46 })))),
+        right: Box::new(Expr::Grouping(Box::new(Expr::Dec(DecimalLiteral { value: "45.67".parse().unwrap() })))),
     });
-    println!("{}", parser::print_ast(&expr));
+    let printed = parser::print_ast(&expr);
+    assert_eq!(printed, "(* (- 123) (group 45.67))");
+    println!("{}", printed);
 }
 
 // fn main() {
