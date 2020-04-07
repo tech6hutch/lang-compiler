@@ -206,6 +206,21 @@ pub enum Token {
     TempStr(TemplateStringToken),
 }
 
+impl Token {
+    pub fn span(&self) -> Span {
+        use Token::*;
+        match self {
+            &Terminator(pos) => Span::one(pos),
+            OpIdent(op) => op.span,
+            KwIdent(kw) => kw.span,
+            Int(int) => int.span,
+            Dec(dec) => dec.span,
+            Str(s) => s.span,
+            TempStr(s) => s.span,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct OperatorToken {
     pub kind: OperatorKind,

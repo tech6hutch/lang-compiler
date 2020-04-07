@@ -6,14 +6,19 @@ use std::{
 use itertools::Itertools;
 use unicode_names2::name;
 use crate::{
+    lexer::Token,
     text::Span,
     util::if_and_then,
 };
 
+#[derive(Clone)]
 pub enum SyntaxError {
     UnexpectedCharacter(Vec<char>, Span),
     UnterminatedString(Span),
     StringInvalidEscSeq(Span),
+    UnexpectedEndOfFile,
+    UnexpectedToken(Token),
+    ExpectedExpr(Option<Token>),
 }
 
 impl Display for SyntaxError {
@@ -40,6 +45,21 @@ impl Display for SyntaxError {
             StringInvalidEscSeq(span) => {
                 f.write_str(format!("The string escape sequence at {} is invalid", span).as_str())
             },
+
+            UnexpectedEndOfFile => {
+                f.write_str("Unexpectedly reached the end of the file")
+            },
+
+            UnexpectedToken(token) => {
+                f.write_str(format!("Unexpected token at {}", token.span()).as_str())
+            },
+
+            ExpectedExpr(Some(token)) => {
+                f.write_str(format!("Expected expression at {}", token.span()).as_str())
+            },
+            ExpectedExpr(None) => {
+                f.write_str("Expected expression")
+            }
         })
     }
 }

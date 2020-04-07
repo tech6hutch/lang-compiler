@@ -1,3 +1,4 @@
+use std::iter::Peekable;
 use std::{
     collections::HashMap,
     convert::TryFrom,
@@ -10,7 +11,12 @@ use either::Either;
 use itertools::Itertools;
 use num_bigint::BigInt;
 use crate::{
-    lexer::{self, Token, Tokens},
+    errors::SyntaxError,
+    lexer::{
+        self,
+        Token, Tokens,
+        OperatorToken, OperatorKind,
+    },
     text::{EnumerateLineCol, Pos, Span},
     traverser::{ALLOWED_ESCAPE_CHARS, ESCAPE_SEQS, EscSeq},
     util::{format_first_char_name, if_some, if_then},
@@ -36,6 +42,156 @@ pub fn print_ast(expr: &Expression) -> String {
         }
         s.push(')');
         s
+    }
+}
+
+pub fn parse(tokens: &Tokens) -> Result<Expression, Vec<SyntaxError>> {
+    // TODO: Maybe try to parse anyway, to catch later errors.
+    if tokens.has_errors() {
+        return Err(tokens.errors().to_owned());
+    }
+
+    let mut iter = tokens.tokens().iter().cloned().peekable();
+    expression(&mut iter)
+        .map_err(|e| vec![e])
+}
+
+/*
+Operator precedence:
+expression     = comparison ;
+comparison     = addition ( ( "<" | "<=" | "=?" | ">" | ">=" ) )* ;
+addition       = multiplication ( ( "-" | "+" ) )* ;
+multiplication = unary ( ( "/" | "*" ) unary )* ;
+unary          = ( "-" ) unary
+               | primary ;
+primary        = NUMBER | STRING
+               | "(" expression ")" ;
+*/
+
+/// "impl" isn't allowed in type aliases yet, and this type is complex and gross, so
+/// I shoved it in a macro.
+macro_rules! MyIterType {
+    () => {
+        &mut Peekable<impl Iterator<Item = Token>>
+    };
+    ($Iterator:ty) => {
+        &mut Peekable<$Iterator>
+    };
+}
+
+fn expression(iter: MyIterType!()) -> ExprResult {
+    comparison(iter)
+}
+
+fn match_op_str(iter: MyIterType!(), ops: &[&'static str]) -> Option<OperatorToken> {
+    if let Some(Token::OpIdent(op_token)) = iter.peek() {
+        match op_token {
+            OperatorToken { kind: OperatorKind::Other(s), .. }
+                if ops.contains(&s.as_str()) => Some(op_token.clone()),
+            _ => None
+        }
+    } else {
+        None
+    }
+}
+
+fn match_op(iter: MyIterType!(), op: OperatorKind) -> Option<OperatorToken> {
+    if let Some(Token::OpIdent(op_token)) = iter.peek() {
+        if_then(op_token.kind == op, || op_token.clone())
+    } else {
+        None
+    }
+}
+
+type ExprResult = Result<Expression, SyntaxError>;
+
+fn binary<I, F>(
+    iter: MyIterType!(I),
+    ops_to_match: &[&'static str],
+    next_higher_precedence: F,
+) -> ExprResult
+where
+    I: Iterator<Item = Token>,
+    F: Fn(MyIterType!(I)) -> ExprResult,
+{
+    let mut expr: Expression = next_higher_precedence(iter)?;
+
+    while let Some(op) = match_op_str(iter, ops_to_match) {
+        iter.next();
+        let right: Expression = next_higher_precedence(iter)?;
+        expr = Expression::Binary(BinaryExpr::new(expr, op, right));
+    }
+
+    return Ok(expr);
+}
+
+fn comparison(iter: MyIterType!()) -> ExprResult {
+    binary(iter, &["<", "<=", "=?", ">", ">="], addition)
+}
+
+fn addition(iter: MyIterType!()) -> ExprResult {
+    binary(iter, &["-", "+"], multiplication)
+}
+
+fn multiplication(iter: MyIterType!()) -> ExprResult {
+    binary(iter, &["/", "*"], unary)
+}
+
+fn unary(iter: MyIterType!()) -> ExprResult {
+    if let Some(op) = match_op_str(iter, &["-"]) {
+        iter.next();
+        let right: Expression = unary(iter)?;
+        return Ok(Expression::Unary(UnaryExpr::new(op, right)));
+    }
+
+    return primary(iter);
+}
+
+fn primary(iter: MyIterType!()) -> ExprResult {
+    Ok(match iter.next() {
+        Some(Token::Int(int_token)) => {
+            Expression::Int(IntegerLiteral { value: int_token.literal.clone() })
+        }
+        Some(Token::Dec(dec_token)) => {
+            Expression::Dec(DecimalLiteral { value: dec_token.literal.clone() })
+        }
+        Some(Token::Str(str_token)) => {
+            Expression::Str(StringLiteral { value: str_token.literal.clone() })
+        }
+
+        Some(Token::OpIdent(OperatorToken { kind: OperatorKind::ParenOpen, .. })) => {
+            let expr: Expression = expression(iter)?;
+            consume_op(iter, OperatorKind::ParenOpen, "Expect ')' after expression.")?;
+            Expression::Grouping(Box::new(expr))
+        }
+
+        maybe_token => return Err(SyntaxError::ExpectedExpr(maybe_token))
+    })
+}
+
+fn consume_op(iter: MyIterType!(), op: OperatorKind, error_msg: &'static str) -> Result<Token, SyntaxError> {
+    if match_op(iter, op).is_some() {
+        return Ok(iter.next().unwrap());
+    }
+
+    Err(iter.peek().cloned()
+        .map(SyntaxError::UnexpectedToken)
+        .unwrap_or(SyntaxError::UnexpectedEndOfFile))
+}
+
+fn synchronize(iter: MyIterType!()) {
+    while let Some(token) = iter.next() {
+        if let Token::Terminator(..) = token {
+            return;
+        }
+
+        if let Some(Token::KwIdent(keyword)) = iter.peek() {
+            use lexer::KeywordKind;
+            match keyword.kind {
+                KeywordKind::If => return,
+                _ => {}
+            }
+        }
     }
 }
 
@@ -77,15 +233,32 @@ pub enum Expression {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UnaryExpr {
-    pub operator: lexer::OperatorToken,
+    pub operator: OperatorToken,
     pub right: Box<Expression>,
+}
+impl UnaryExpr {
+    fn new(operator: OperatorToken, right: Expression) -> Self {
+        Self {
+            operator,
+            right: Box::new(right),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BinaryExpr {
     pub left: Box<Expression>,
-    pub operator: lexer::OperatorToken,
+    pub operator: OperatorToken,
     pub right: Box<Expression>,
+}
+impl BinaryExpr {
+    fn new(left: Expression, operator: OperatorToken, right: Expression) -> Self {
+        Self {
+            left: Box::new(left),
+            operator,
+            right: Box::new(right),
+        }
+    }
 }
 
 // #[derive(Debug, PartialEq, Eq, Clone)]
@@ -204,19 +377,6 @@ Comparison: =? < > <= >=
 // pub enum PositionInCategory {
 //     YieldsToOthersInCategory,
 //     BindsCloserThanOthersInCategory,
-// }
-
-// fn synchronize(iter: &mut impl Iterator<Item = IToken>) {
-//     while let Some(token) = iter.next() {
-//         let term = token as lexer::TerminatorToken;
-//         if let lexer::TerminatorToken { .. } = token {
-//             return;
-//         }
-
-//         match iter.peek() {
-
-//         }
-//     }
 // }
 
 // pub fn parse(tokens: Tokens) -> Result<SyntaxTree, SyntaxError> {
