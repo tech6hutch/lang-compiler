@@ -482,42 +482,66 @@ pub struct StringLiteralToken {
     pub span: Span,
 }
 impl StringLiteralToken {
-    fn try_consume_from(iter: MyIterType!(), start_quote: char, start_pos: Pos) -> Result<Self, SyntaxError> {
-        let close_quote = closing_quote(start_quote);
-        assert!(CLOSING_QUOTES.contains(&close_quote));
-        let mut escaping = false; // whether the prev char was backslash
-        let (lexeme, span) = try_string_while(iter, None, start_pos, |(c, pos)| {
-            if escaping {
-                if *c == '\n' || *c == close_quote || ALLOWED_ESCAPE_CHARS.contains(c) {
-                    escaping = false;
-                    Ok(true)
-                } else {
-                    Err(SyntaxError::StringInvalidEscSeq(Span::one(*pos)))
-                }
-            } else {
-                match c {
-                    '\n' => {
-                        // Strings can't continue across lines unless escaped
-                        Err(SyntaxError::UnterminatedString(Span::one(*pos)))
-                    },
-                    '\\' => {
-                        escaping = true;
-                        Ok(true)
-                    },
-                    _ => {
-                        // If c is close_quote, the string is over
-                        Ok(*c != close_quote)
-                    },
-                }
-            }
-        })?;
+    fn try_consume_from(iter: MyIterType!(), open_quote: char, start_pos: Pos) -> Result<Self, SyntaxError> {
+        let (lexeme, span) = {
+            let close_quote = closing_quote(open_quote);
+            assert!(CLOSING_QUOTES.contains(&close_quote));
+            let mut escaping = false; // whether the prev char was backslash
 
-        // Consume the closing quote.
-        iter.next();
+            let (mut lexeme, mut span) = try_string_while(iter, Some(open_quote), start_pos, |&(c, ref pos)| {
+                if escaping {
+                    if c == '\n' || c == close_quote || ALLOWED_ESCAPE_CHARS.contains(&c) {
+                        escaping = false;
+                        Ok(true)
+                    } else {
+                        Err(SyntaxError::StringInvalidEscSeq(Span::one(*pos)))
+                    }
+                } else {
+                    match c {
+                        '\n' => {
+                            // Strings can't continue across lines unless escaped
+                            Err(SyntaxError::UnterminatedString(Span::one(*pos)))
+                        },
+                        '\\' => {
+                            escaping = true;
+                            Ok(true)
+                        },
+                        _ => {
+                            // If c is close_quote, the string is over
+                            Ok(c != close_quote)
+                        },
+                    }
+                }
+            })?;
+
+            // Consume the closing quote.
+            lexeme.push(iter.next().unwrap().0);
+            span.end.col += 1;
+
+            (lexeme, span)
+        };
+
+        let literal = StringLiteralToken::parse_lexeme(lexeme.as_str());
+
+        Ok(Self {
+            lexeme,
+            literal,
+            span,
+        })
+    }
+
+    /// Handles escape sequences and other aspects of string syntax
+    fn parse_lexeme(lexeme: &str) -> String {
+        assert!(lexeme.chars().count() > 0, "empty string lexeme");
+        assert_eq!(lexeme.chars().next().unwrap(), '"', "lexeme not start with quote");
+        assert_eq!(lexeme.chars().last().unwrap(), '"', "lexeme not end with quote");
+
+        let lexeme = &lexeme[1..lexeme.len()-1];
 
         let mut escaping = false;
         let mut consuming_leading_whitespace = false;
-        let literal = lexeme.chars().filter_map(|c| {
+
+        lexeme.chars().filter_map(|c| {
             if consuming_leading_whitespace {
                 assert!(!escaping);
                 if c == ' ' || c == '\t' {
@@ -544,13 +568,7 @@ impl StringLiteralToken {
             } else {
                 Some(c)
             }
-        }).collect();
-
-        Ok(Self {
-            lexeme,
-            literal,
-            span,
-        })
+        }).collect()
     }
 
     fn lexeme(&self) -> String {
