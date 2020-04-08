@@ -111,7 +111,7 @@ impl std::str::FromStr for Tokens {
                             if let Token::Int(int_token) = last {
                                 if match_next(&mut iter, char::is_ascii_digit) {
                                     r#else = false;
-                                    
+
                                     match DecimalLiteralToken::try_consume_from(&mut iter, int_token) {
                                         Ok(token) => *last = Token::Dec(token),
                                         Err(e) => errors.push(e),
@@ -193,6 +193,14 @@ Token
 - RawStringToken/VerbatimStringToken (TODO; maybe can be combined with plain StringLiteralToken)
 */
 
+/*
+TODO: I might later change tokens from storing their line and column directly to storing just
+their starting (byte) index and their length (in bytes), and then their line and column can be
+calculated later only if needed (i.e., if an error occurred). In addition, I wouldn't need to
+store the raw lexeme as a String, since I could produce it as a &str by just indexing into the
+source String from index to index plus length.
+*/
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Terminator(Pos),
@@ -207,17 +215,58 @@ pub enum Token {
 }
 
 impl Token {
+    pub fn lexeme(&self) -> Option<String> {
+        use Token::*;
+        Some(each_case!(match self {
+            Terminator(..) => return None,
+            ==> OpIdent | KwIdent | Int | Dec | Str | TempStr => each.lexeme(),
+        }))
+    }
+
     pub fn span(&self) -> Span {
         use Token::*;
-        match self {
+        each_case!(match self {
             &Terminator(pos) => Span::one(pos),
-            OpIdent(op) => op.span,
-            KwIdent(kw) => kw.span,
-            Int(int) => int.span,
-            Dec(dec) => dec.span,
-            Str(s) => s.span,
-            TempStr(s) => s.span,
+            ==> OpIdent | KwIdent | Int | Dec | Str | TempStr => each.span,
+        })
+    }
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        fn variant_name(token: &Token) -> &'static str {
+            use Token::*;
+            match token {
+                Terminator(..) => "Terminator",
+                // Ident
+                OpIdent(..) => "OperatorToken",
+                KwIdent(..) => "KeywordToken",
+                // Literals
+                Int(..) => "IntegerLiteralToken",
+                Dec(..) => "DecimalLiteralToken",
+                Str(..) => "StringLiteralToken",
+                TempStr(..) => "TemplateStringToken",
+            }
         }
+        fn literal_as_string(token: &Token) -> Option<String> {
+            use Token::*;
+            Some(match token {
+                Terminator(..) => return None,
+                // Ident
+                OpIdent(..) => return None,
+                KwIdent(..) => return None,
+                // Literals
+                Int(int) => int.literal.to_string(),
+                Dec(dec) => dec.literal.to_string(),
+                Str(s) => format!("\"{}\"", s.literal),
+                TempStr(..) => todo!(),
+            })
+        }
+
+        write!(f, "{variant} at {span}{lexeme}{value}",
+            variant = variant_name(self), span = self.span(),
+            lexeme = self.lexeme().map(|s| format!(" '{}'", s)).unwrap_or_default(),
+            value = literal_as_string(self).map(|s| format!(", value: {}", s)).unwrap_or_default())
     }
 }
 
@@ -233,6 +282,10 @@ impl OperatorToken {
             kind: OperatorKind::from(lexeme.as_str()),
             span,
         }
+    }
+
+    fn lexeme(&self) -> String {
+        self.kind.to_string()
     }
 }
 
@@ -307,6 +360,10 @@ impl KeywordToken {
             span,
         }
     }
+
+    fn lexeme(&self) -> String {
+        self.kind.to_string()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -337,9 +394,30 @@ impl From<&str> for KeywordKind {
         }
     }
 }
+impl<'other> From<&'other KeywordKind> for &'other str {
+    fn from(kw: &'other KeywordKind) -> Self {
+        use KeywordKind::*;
+        match kw {
+            End => "end",
+            Do => "do",
+            If => "if",
+            Then => "then",
+            Else => "else",
+            And => "and",
+            Or => "or",
+            Other(s) => s.as_str()
+        }
+    }
+}
+impl Display for KeywordKind {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.write_str(self.into())
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct IntegerLiteralToken {
+    pub lexeme: String,
     pub literal: BigInt,
     pub span: Span,
 }
@@ -349,13 +427,19 @@ impl IntegerLiteralToken {
 
         Ok(Self {
             literal: lexeme.parse().expect("this string should be only digits"),
+            lexeme,
             span,
         })
+    }
+
+    fn lexeme(&self) -> String {
+        self.lexeme.clone()
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DecimalLiteralToken {
+    pub lexeme: String,
     pub literal: BigDecimal,
     pub span: Span,
 }
@@ -364,12 +448,17 @@ impl DecimalLiteralToken {
         let start_pos = int_token.span.start;
         let (dec_str, span) = try_string_while(iter, None, start_pos, digit_not_keyword)?;
 
-        let big_str: String = format!("{}.{}", int_token.literal, dec_str);
+        let lexeme: String = format!("{}.{}", int_token.lexeme, dec_str);
 
         Ok(Self {
-            literal: big_str.parse().expect("this string should be valid decimal"),
+            literal: lexeme.parse().expect("this string should be valid decimal"),
+            lexeme,
             span,
         })
+    }
+
+    fn lexeme(&self) -> String {
+        self.lexeme.clone()
     }
 }
 
@@ -387,6 +476,7 @@ fn digit_not_keyword((c, pos): &CharAndPos) -> Result<bool, SyntaxError> {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StringLiteralToken {
+    pub lexeme: String,
     /// Has all the escape sequences replaced.
     pub literal: String,
     pub span: Span,
@@ -421,9 +511,8 @@ impl StringLiteralToken {
                 }
             }
         })?;
-        
-        // We need to consume the closing quote because try_string_while() peeks at chars
-        // and only consumes them if the predicate returns Ok(true).
+
+        // Consume the closing quote.
         iter.next();
 
         let mut escaping = false;
@@ -458,9 +547,14 @@ impl StringLiteralToken {
         }).collect();
 
         Ok(Self {
+            lexeme,
             literal,
             span,
         })
+    }
+
+    fn lexeme(&self) -> String {
+        self.lexeme.clone()
     }
 }
 
@@ -468,8 +562,14 @@ pub type StringTemplate = Vec<Either<StringLiteralToken, KeywordToken>>;
 // TODO: implement this string type.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TemplateStringToken {
+    pub lexeme: String,
     pub template: StringTemplate,
     pub span: Span,
+}
+impl TemplateStringToken {
+    fn lexeme(&self) -> String {
+        self.lexeme.clone()
+    }
 }
 
 // Iterator consumption helper methods

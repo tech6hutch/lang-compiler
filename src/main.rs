@@ -3,12 +3,13 @@ use bigdecimal::BigDecimal;
 use itertools::Itertools;
 use num_bigint::BigInt;
 
+#[macro_use]
+mod util;
 mod errors;
 mod text;
 mod lexer;
 mod parser;
 mod traverser;
-mod util;
 
 // fn main() {
 //     use lexer::{OperatorToken, OperatorKind};
@@ -75,7 +76,7 @@ fn run(source: &str) {
     let tokens = lexer::lex(source);
 
     for token in tokens.tokens() {
-        println!("{:?}", token);
+        println!("{}", token);
     }
     if tokens.has_errors() {
         let errors = tokens.errors();
