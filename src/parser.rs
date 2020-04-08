@@ -161,7 +161,7 @@ fn primary(iter: MyIterType!()) -> ExprResult {
 
         Some(Token::OpIdent(OperatorToken { kind: OperatorKind::ParenOpen, .. })) => {
             let expr: Expression = expression(iter)?;
-            consume_op(iter, OperatorKind::ParenOpen, "Expect ')' after expression.")?;
+            consume_op(iter, OperatorKind::ParenClose, "Expect ')' after expression.")?;
             Expression::Grouping(Box::new(expr))
         }
 
