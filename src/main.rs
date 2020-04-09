@@ -88,8 +88,9 @@ fn run(source: &str) {
         for e in errors {
             println!("{:?}", e);
         }
+        return;
     }
-    
+
     match parser::parse(&tokens) {
         Ok(expr) => println!("{}", parser::print_ast(&expr)),
         Err(errors) => {
