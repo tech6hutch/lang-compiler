@@ -175,8 +175,8 @@ fn consume_op(iter: MyIterType!(), op: OperatorKind, error_msg: &'static str) ->
     }
 
     Err(iter.peek().cloned()
-        .map(SyntaxError::UnexpectedToken)
-        .unwrap_or(SyntaxError::UnexpectedEndOfFile))
+        .map(|token| SyntaxError::UnexpectedToken(token, Some(error_msg)))
+        .unwrap_or_else(|| SyntaxError::UnexpectedEndOfFile(Some(error_msg))))
 }
 
 fn synchronize(iter: MyIterType!()) {

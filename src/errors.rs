@@ -16,8 +16,8 @@ pub enum SyntaxError {
     UnexpectedCharacter(Vec<char>, Span),
     UnterminatedString(Span),
     StringInvalidEscSeq(Span),
-    UnexpectedEndOfFile,
-    UnexpectedToken(Token),
+    UnexpectedEndOfFile(Option<&'static str>),
+    UnexpectedToken(Token, Option<&'static str>),
     ExpectedExpr(Option<Token>),
 }
 
@@ -46,12 +46,20 @@ impl Display for SyntaxError {
                 f.write_str(format!("The string escape sequence at {} is invalid", span).as_str())
             },
 
-            UnexpectedEndOfFile => {
-                f.write_str("Unexpectedly reached the end of the file")
+            UnexpectedEndOfFile(msg) => {
+                f.write_str("Unexpectedly reached the end of the file")?;
+                if let Some(msg) = msg {
+                    write!(f, ". {}", msg)?;
+                }
+                Ok(())
             },
 
-            UnexpectedToken(token) => {
-                f.write_str(format!("Unexpected token at {}", token.span()).as_str())
+            UnexpectedToken(token, msg) => {
+                f.write_str(format!("Unexpected token at {}", token.span()).as_str())?;
+                if let Some(msg) = msg {
+                    write!(f, ". {}", msg)?;
+                }
+                Ok(())
             },
 
             ExpectedExpr(Some(token)) => {
