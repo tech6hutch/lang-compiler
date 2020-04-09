@@ -1,6 +1,3 @@
-use std::iter::once;
-use unicode_names2::name;
-
 /// Returns `Some(t)` if the `bool` is `true`, or `None` otherwise.
 #[inline]
 pub fn if_some<T>(b: bool, t: T) -> Option<T> {
@@ -30,7 +27,7 @@ pub fn if_and_then<T, F: FnOnce() -> Option<T>>(b: bool, f: F) -> Option<T> {
 /// the magic to.
 macro_rules! each_case {
     // I don't know of any way to accept either a field or a method in the same rule :/
-    
+
     // each.method()
     (match $m:path {
         $( $pre_arm_pat:pat => $pre_arm_case:expr, )*
@@ -58,17 +55,18 @@ macro_rules! each_case {
     };
 }
 
-/// Includes quotes and a trailing space.
-pub fn format_first_char_name(s: &str) -> String {
-    format_char_name(s.chars().next().unwrap())
+pub fn s_if_plural<T: IntoIterator>(list: T) -> &'static str {
+    if list.into_iter().count() == 1 { "" } else { "s" }
 }
 
-/// Includes quotes and a trailing space.
-pub fn format_char_name(c: char) -> String {
-    name(c)
-        .map(|n| once("'")
-            .chain(n)
-            .chain(once("' "))
-            .collect::<String>())
-        .unwrap_or("".to_string())
+pub fn space_quote_nonempty<S: AsRef<str>>(s: S) -> String {
+    if s.as_ref().is_empty() {
+        "".to_string()
+    } else {
+        space_quote(s)
+    }
+}
+
+pub fn space_quote<S: AsRef<str>>(s: S) -> String {
+    [" '", s.as_ref(), "'"].concat()
 }

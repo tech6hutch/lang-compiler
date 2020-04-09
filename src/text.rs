@@ -58,21 +58,21 @@ impl Span {
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Self { start, end } = self;
-        f.write_str(if start.line == end.line {
+        if start.line == end.line {
             if start.col == end.col {
-                format!("{}:{}", start.line, start.col)
+                write!(f, "{}:{}", start.line, start.col)
             } else {
-                format!("{}:{}-{}", start.line, start.col, end.col)
+                write!(f, "{}:{}-{}", start.line, start.col, end.col)
             }
         } else {
-            format!("{} - {}", start, end)
-        }.as_str())
+            write!(f, "{} - {}", start, end)
+        }
     }
 }
 
 impl fmt::Debug for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{:?} - {:?}", self.start, self.end))
+        write!(f, "{:?} - {:?}", self.start, self.end)
     }
 }
 
@@ -101,7 +101,7 @@ impl fmt::Display for Pos {
 
 impl fmt::Debug for Pos {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{}:{}", self.line, self.col))
+        write!(f, "{}:{}", self.line, self.col)
     }
 }
 

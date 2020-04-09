@@ -1,14 +1,8 @@
 use std::iter::Peekable;
 use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    error::Error,
     fmt::{self, Display, Debug, Formatter},
-    iter::once,
 };
 use bigdecimal::BigDecimal;
-use either::Either;
-use itertools::Itertools;
 use num_bigint::BigInt;
 use crate::{
     errors::SyntaxError,
@@ -17,9 +11,7 @@ use crate::{
         Token, Tokens,
         OperatorToken, OperatorKind,
     },
-    text::{EnumerateLineCol, Pos, Span},
-    traverser::{ALLOWED_ESCAPE_CHARS, ESCAPE_SEQS, EscSeq},
-    util::{format_first_char_name, if_some, if_then},
+    util::if_then,
 };
 
 pub fn print_ast(expr: &Expression) -> String {

@@ -1,4 +1,3 @@
-use std::iter::once;
 use std::{
     error::Error,
     fmt::{self, Display, Debug, Formatter},
@@ -8,7 +7,7 @@ use unicode_names2::name;
 use crate::{
     lexer::Token,
     text::Span,
-    util::if_and_then,
+    util::{if_and_then, s_if_plural, space_quote_nonempty},
 };
 
 #[derive(Clone)]
@@ -23,27 +22,25 @@ pub enum SyntaxError {
 
 impl Display for SyntaxError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        use SyntaxError::*;
-        f.write_str("Syntax error: ").and_then(|_| match self {
-            UnexpectedCharacter(chars, span) => {
-                assert!([1, 1, 1].iter().all_equal());
-                assert!([1, 1].iter().all_equal());
-                assert!([1].iter().all_equal());
+        f.write_str("Syntax error: ")?;
 
-                // all_equal() returns true when len = 1
-                let c_name: String = if_and_then(chars.iter().all_equal(), || name(chars[0]))
-                        .map(|c_name| once("'").chain(c_name).chain(once("' ")).collect())
-                        .unwrap_or_default();
-                f.write_str(format!("Unexpected {}character{} at {}",
-                    c_name, if chars.len() == 1 { "" } else { "s" }, span).as_str())
+        use SyntaxError::*;
+        match self {
+            UnexpectedCharacter(chars, span) => {
+                // all_equal() defaults to true when len <= 1
+                let c_name_or_empty: String = if_and_then(chars.iter().all_equal(), || name(chars[0]))
+                    .map(|c_name| c_name.to_string())
+                    .unwrap_or_default();
+                write!(f, "Unexpected{} character{} at {}",
+                    space_quote_nonempty(c_name_or_empty), s_if_plural(chars), span)
             },
 
             UnterminatedString(span) => {
-                f.write_str(format!("The string at {} isn't terminated", span).as_str())
+                write!(f, "The string at {} isn't terminated", span)
             },
 
             StringInvalidEscSeq(span) => {
-                f.write_str(format!("The string escape sequence at {} is invalid", span).as_str())
+                write!(f, "The string escape sequence at {} is invalid", span)
             },
 
             UnexpectedEndOfFile(msg) => {
@@ -55,7 +52,7 @@ impl Display for SyntaxError {
             },
 
             UnexpectedToken(token, msg) => {
-                f.write_str(format!("Unexpected token at {}", token.span()).as_str())?;
+                write!(f, "Unexpected token at {}", token.span())?;
                 if let Some(msg) = msg {
                     write!(f, ". {}", msg)?;
                 }
@@ -63,12 +60,12 @@ impl Display for SyntaxError {
             },
 
             ExpectedExpr(Some(token)) => {
-                f.write_str(format!("Expected expression at {}", token.span()).as_str())
+                write!(f, "Expected expression at {}", token.span())
             },
             ExpectedExpr(None) => {
                 f.write_str("Expected expression")
             }
-        })
+        }
     }
 }
 

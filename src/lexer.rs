@@ -1,6 +1,6 @@
 use std::{
     convert::Infallible,
-    fmt::{self, Debug, Display, Formatter, Write},
+    fmt::{self, Debug, Display, Formatter},
     iter::{Extend, Peekable, once},
 };
 use bigdecimal::BigDecimal;
@@ -11,6 +11,7 @@ use crate::{
     errors::SyntaxError,
     text::{CharAndPos, EnumerateLineCol, Pos, Span},
     traverser::{ALLOWED_ESCAPE_CHARS, ESCAPE_SEQS},
+    util::space_quote,
 };
 
 pub fn lex(code: &str) -> Tokens {
@@ -230,43 +231,49 @@ impl Token {
             ==> OpIdent | KwIdent | Int | Dec | Str | TempStr => each.span,
         })
     }
+
+    fn variant_name(&self) -> &'static str {
+        use Token::*;
+        match self {
+            Terminator(..) => "Terminator",
+            // Ident
+            OpIdent(..) => "OperatorToken",
+            KwIdent(..) => "KeywordToken",
+            // Literals
+            Int(..) => "IntegerLiteralToken",
+            Dec(..) => "DecimalLiteralToken",
+            Str(..) => "StringLiteralToken",
+            TempStr(..) => "TemplateStringToken",
+        }
+    }
+
+    fn literal_as_string(&self) -> Option<String> {
+        use Token::*;
+        Some(match self {
+            Terminator(..) => return None,
+            // Ident
+            OpIdent(..) => return None,
+            KwIdent(..) => return None,
+            // Literals
+            Int(int) => int.literal.to_string(),
+            Dec(dec) => dec.literal.to_string(),
+            Str(s) => format!("\"{}\"", s.literal),
+            TempStr(..) => todo!(),
+        })
+    }
 }
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        fn variant_name(token: &Token) -> &'static str {
-            use Token::*;
-            match token {
-                Terminator(..) => "Terminator",
-                // Ident
-                OpIdent(..) => "OperatorToken",
-                KwIdent(..) => "KeywordToken",
-                // Literals
-                Int(..) => "IntegerLiteralToken",
-                Dec(..) => "DecimalLiteralToken",
-                Str(..) => "StringLiteralToken",
-                TempStr(..) => "TemplateStringToken",
-            }
-        }
-        fn literal_as_string(token: &Token) -> Option<String> {
-            use Token::*;
-            Some(match token {
-                Terminator(..) => return None,
-                // Ident
-                OpIdent(..) => return None,
-                KwIdent(..) => return None,
-                // Literals
-                Int(int) => int.literal.to_string(),
-                Dec(dec) => dec.literal.to_string(),
-                Str(s) => format!("\"{}\"", s.literal),
-                TempStr(..) => todo!(),
-            })
+        write!(f, "{variant} at {span}{lexeme}",
+            variant = self.variant_name(), span = self.span(),
+            lexeme = self.lexeme().map(space_quote).unwrap_or_default())?;
+
+        if let Some(s) = self.literal_as_string() {
+            write!(f, ", value: {}", s)?;
         }
 
-        write!(f, "{variant} at {span}{lexeme}{value}",
-            variant = variant_name(self), span = self.span(),
-            lexeme = self.lexeme().map(|s| format!(" '{}'", s)).unwrap_or_default(),
-            value = literal_as_string(self).map(|s| format!(", value: {}", s)).unwrap_or_default())
+        Ok(())
     }
 }
 
