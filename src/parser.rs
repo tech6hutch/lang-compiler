@@ -1,8 +1,9 @@
-use std::iter::Peekable;
 use std::{
     fmt::{self, Display, Debug, Formatter},
+    iter::Peekable,
 };
 use bigdecimal::BigDecimal;
+use if_chain::if_chain;
 use num_bigint::BigInt;
 use crate::{
     errors::SyntaxError,
@@ -11,7 +12,6 @@ use crate::{
         Token, Tokens,
         OperatorToken, OperatorKind,
     },
-    util::if_then,
 };
 
 pub fn print_ast(expr: &Expression) -> String {
@@ -76,22 +76,27 @@ fn expression(iter: MyIterType!()) -> ExprResult {
 }
 
 fn match_op_str(iter: MyIterType!(), ops: &[&'static str]) -> Option<OperatorToken> {
-    if let Some(Token::OpIdent(op_token)) = iter.peek() {
-        match op_token {
-            OperatorToken { kind: OperatorKind::Other(s), .. }
-                if ops.contains(&s.as_str()) => Some(op_token.clone()),
-            _ => None
+    if_chain! {
+        if let Some(Token::OpIdent(op_token)) = iter.peek();
+        if let OperatorToken { kind: OperatorKind::Other(s), .. } = op_token;
+        if ops.contains(&s.as_str());
+        then {
+            Some(op_token.clone())
+        } else {
+            None
         }
-    } else {
-        None
     }
 }
 
 fn match_op(iter: MyIterType!(), op: OperatorKind) -> Option<OperatorToken> {
-    if let Some(Token::OpIdent(op_token)) = iter.peek() {
-        if_then(op_token.kind == op, || op_token.clone())
-    } else {
-        None
+    if_chain! {
+        if let Some(Token::OpIdent(op_token)) = iter.peek();
+        if op_token.kind == op;
+        then {
+            Some(op_token.clone())
+        } else {
+            None
+        }
     }
 }
 
@@ -133,10 +138,10 @@ fn unary(iter: MyIterType!()) -> ExprResult {
     if let Some(op) = match_op_str(iter, &["-"]) {
         iter.next();
         let right: Expression = unary(iter)?;
-        return Ok(Expression::Unary(UnaryExpr::new(op, right)));
+        Ok(Expression::Unary(UnaryExpr::new(op, right)))
+    } else {
+        primary(iter)
     }
-
-    return primary(iter);
 }
 
 fn primary(iter: MyIterType!()) -> ExprResult {
@@ -163,12 +168,12 @@ fn primary(iter: MyIterType!()) -> ExprResult {
 
 fn consume_op(iter: MyIterType!(), op: OperatorKind, error_msg: &'static str) -> Result<Token, SyntaxError> {
     if match_op(iter, op).is_some() {
-        return Ok(iter.next().unwrap());
+        Ok(iter.next().unwrap())
+    } else {
+        Err(iter.peek().cloned()
+            .map(|token| SyntaxError::UnexpectedToken(token, Some(error_msg)))
+            .unwrap_or_else(|| SyntaxError::UnexpectedEndOfFile(Some(error_msg))))
     }
-
-    Err(iter.peek().cloned()
-        .map(|token| SyntaxError::UnexpectedToken(token, Some(error_msg)))
-        .unwrap_or_else(|| SyntaxError::UnexpectedEndOfFile(Some(error_msg))))
 }
 
 fn synchronize(iter: MyIterType!()) {

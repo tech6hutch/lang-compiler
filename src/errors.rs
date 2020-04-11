@@ -32,15 +32,15 @@ impl Display for SyntaxError {
                     .map(|c_name| c_name.to_string())
                     .unwrap_or_default();
                 write!(f, "Unexpected{} character{} at {}",
-                    space_quote_nonempty(c_name_or_empty), s_if_plural(chars), span)
+                    space_quote_nonempty(c_name_or_empty), s_if_plural(chars), span)?;
             },
 
             UnterminatedString(span) => {
-                write!(f, "The string at {} isn't terminated", span)
+                write!(f, "The string at {} isn't terminated", span)?;
             },
 
             StringInvalidEscSeq(span) => {
-                write!(f, "The string escape sequence at {} is invalid", span)
+                write!(f, "The string escape sequence at {} is invalid", span)?;
             },
 
             UnexpectedEndOfFile(msg) => {
@@ -48,7 +48,6 @@ impl Display for SyntaxError {
                 if let Some(msg) = msg {
                     write!(f, ". {}", msg)?;
                 }
-                Ok(())
             },
 
             UnexpectedToken(token, msg) => {
@@ -56,16 +55,17 @@ impl Display for SyntaxError {
                 if let Some(msg) = msg {
                     write!(f, ". {}", msg)?;
                 }
-                Ok(())
             },
 
             ExpectedExpr(Some(token)) => {
-                write!(f, "Expected expression at {}", token.span())
+                write!(f, "Expected expression at {}", token.span())?;
             },
             ExpectedExpr(None) => {
-                f.write_str("Expected expression")
+                f.write_str("Expected expression")?;
             }
         }
+
+        Ok(())
     }
 }
 
