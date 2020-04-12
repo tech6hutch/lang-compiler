@@ -1,7 +1,5 @@
 use std::{fs, io::{self, Write}};
-use bigdecimal::BigDecimal;
 use itertools::Itertools;
-use num_bigint::BigInt;
 
 #[macro_use]
 mod util;
@@ -9,7 +7,8 @@ mod errors;
 mod text;
 mod lexer;
 mod parser;
-mod traverser;
+mod interpreter;
+mod traverser; // TODO: change or remove
 
 // fn main() {
 //     use lexer::{OperatorToken, OperatorKind};
@@ -42,7 +41,13 @@ fn main() {
             std::process::exit(64);
         },
         [_, file] => {
-            run_file(file).expect("file not found?");
+            if let Err(run_file_err) = run_file(file) { match run_file_err {
+                RunFileError::Io(e) => panic!("file not found?: {:?}", e),
+                RunFileError::Code(stage) => match stage {
+                    Stage::Parsing => std::process::exit(65),
+                    Stage::Evaluating => std::process::exit(70),
+                },
+            } }
         },
         [_] => {
             run_prompt().expect("reading from stdin failed?");
@@ -53,9 +58,20 @@ fn main() {
     }
 }
 
-fn run_file(path: &str) -> io::Result<()> {
+enum RunFileError {
+    Io(io::Error),
+    Code(Stage),
+}
+impl From<io::Error> for RunFileError {
+    fn from(e: io::Error) -> Self { RunFileError::Io(e) }
+}
+impl From<Stage> for RunFileError {
+    fn from(e: Stage) -> Self { RunFileError::Code(e) }
+}
+
+fn run_file(path: &str) -> Result<(), RunFileError> {
     let file = fs::read_to_string(path)?;
-    run(file.as_str());
+    run(file.as_str())?;
     Ok(())
 }
 
@@ -68,11 +84,16 @@ fn run_prompt() -> io::Result<()> {
         stdout.flush()?;
         s.clear();
         stdin.read_line(&mut s)?;
-        run(s.as_str());
+        let _ = run(s.as_str());
     }
 }
 
-fn run(source: &str) {
+enum Stage {
+    Parsing,
+    Evaluating,
+}
+
+fn run(source: &str) -> Result<(), Stage> {
     let tokens = lexer::lex(source);
 
     for token in tokens.tokens() {
@@ -88,11 +109,14 @@ fn run(source: &str) {
         for e in errors {
             println!("{:?}", e);
         }
-        return;
+        return Err(Stage::Parsing);
     }
 
-    match parser::parse(&tokens) {
-        Ok(expr) => println!("{}", parser::print_ast(&expr)),
+    let expr = match parser::parse(&tokens) {
+        Ok(expr) => {
+            println!("{}", parser::print_ast(&expr));
+            expr
+        },
         Err(errors) => {
             if errors.len() == 1 {
                 println!("An error ocurred:");
@@ -102,6 +126,17 @@ fn run(source: &str) {
             for e in errors {
                 println!("{:?}", e);
             }
+            return Err(Stage::Parsing);
+        }
+    };
+
+    match interpreter::interpret(&expr) {
+        Ok(value) => println!("{}", value),
+        Err(e) => {
+            println!("{}", e);
+            return Err(Stage::Evaluating);
         }
     }
+
+    Ok(())
 }

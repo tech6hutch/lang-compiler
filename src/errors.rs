@@ -5,7 +5,7 @@ use std::{
 use itertools::Itertools;
 use unicode_names2::name;
 use crate::{
-    lexer::Token,
+    lexer::{Token, OperatorToken},
     text::Span,
     util::{if_and_then, s_if_plural, space_quote_nonempty},
 };
@@ -76,3 +76,28 @@ impl Debug for SyntaxError {
 }
 
 impl Error for SyntaxError {}
+
+#[derive(Clone)]
+pub enum RuntimeError {
+    OperandTypeError {
+        arity: usize,
+        operator: OperatorToken,
+        type_str: &'static str,
+    },
+}
+
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.write_str("Syntax error: ")?;
+
+        use RuntimeError::*;
+        match self {
+            &OperandTypeError { arity, ref operator, type_str } => {
+                write!(f, "Operand{} must be {}.",
+                    if arity != 1 { "s" } else { "" }, type_str)?;
+            }
+        }
+
+        Ok(())
+    }
+}
